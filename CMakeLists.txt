@@ -10,7 +10,7 @@ include_directories(external_libs/parson)
 add_subdirectory(external_libs)
 
 add_library(bee
-    bee_server.c
+    bee.c
 )
 
 add_subdirectory(examples)

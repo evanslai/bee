@@ -45,7 +45,7 @@ struct bee_connection {
 };
 
 
-/* bee_server.c */
+/* bee.c */
 bee_server_t * bee_server_tcp_new(struct event_base *evbase, const char *baddr, uint16_t port, int backlog);
 bee_server_t * bee_server_udp_new(struct event_base *evbase, const char *baddr, uint16_t port);
 bee_server_t * bee_server_mcast_new(struct event_base *evbase, const char *laddr, const char *gaddr, uint16_t port);
