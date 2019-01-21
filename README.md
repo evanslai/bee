@@ -2,7 +2,7 @@
 ## About
 Bee is an event-based server skeleton written in C.
 
-## Compile & Install
+## Building
 ```
 git clone https://github.com/evanslai/bee.git
 cd bee
