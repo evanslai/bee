@@ -16,3 +16,6 @@ target_link_libraries(telnetd bee -levent)
 
 add_executable(bee_httpd bee_httpd.c)
 target_link_libraries(bee_httpd bee beehelper -levent)
+
+add_executable(bee_telnetd bee_telnetd.c)
+target_link_libraries(bee_telnetd bee beehelper -levent)

@@ -132,9 +132,6 @@ static void telnetd_println(struct telnetd_state *s, char *str)
 static void
 __getchar(struct telnetd_state *s, uint8_t c)
 {
-    static const char *ctrl_c =
-        "\xFF\xF4\xFF\xFD\x06";
-
     if (c == ISO_cr) {
         return;
     }
@@ -152,8 +149,8 @@ __getchar(struct telnetd_state *s, uint8_t c)
         }
         else {
             telnetd_println(s, s->buf);
+            telnetd_prompt(s, "bee> ");
         }
-        telnetd_prompt(s, "wizard> ");
         s->bufptr = 0;
     }
     else
