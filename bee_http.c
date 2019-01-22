@@ -22,71 +22,73 @@
     "The requested URL was not found on this server.\n"
 
 
-static bee_http_request_t *
+static bh_request_t *
 __http_request_new(void)
 {
-    bee_http_request_t *http_request;
-    bee_http_header_t *header = NULL;
+    bh_request_t *request;
+    bh_header_t *header = NULL;
     int i;
 
-    http_request = malloc(sizeof(bee_http_request_t));
-    assert(http_request != NULL);
+    request = malloc(sizeof(bh_request_t));
+    assert(request != NULL);
 
-    http_request->url = NULL;
-    http_request->method = NULL;
-    http_request->header_lines = 0;
+    request->url = NULL;
+    request->method = NULL;
+    request->header_lines = 0;
 
     for (i = 0; i < MAX_HTTP_HEADERS; i++) {
-        header = &http_request->headers[i];
+        header = &request->headers[i];
         header->field = NULL;
         header->value = NULL;
-        header->field_length = 0;
-        header->value_length = 0;
+        header->field_len = 0;
+        header->value_len = 0;
     }
 
-    http_request->body = NULL;
-    http_request->body_length = 0;
+    request->body = NULL;
+    request->body_len = 0;
 
-    return http_request;
+    return request;
 }
 
 static void
-__http_request_free(bee_http_request_t *http_request)
+__http_request_free(bh_request_t *request)
 {
     int i;
-    bee_http_header_t *header = NULL;
+    bh_header_t *header = NULL;
 
-    if (http_request->url != NULL) {
-        free(http_request->url);
-        http_request->url = NULL;
+    if (request->url != NULL) {
+        free(request->url);
+        request->url = NULL;
     }
 
-    if (http_request->method != NULL) {
-        free(http_request->method);
-        http_request->method = NULL;
+    if (request->method != NULL) {
+        free(request->method);
+        request->method = NULL;
     }
 
-    for (i = 0; i < http_request->header_lines; ++i) {
-        header = &http_request->headers[i];
+    for (i = 0; i < request->header_lines; ++i) {
+        header = &request->headers[i];
         if (header->field != NULL) {
             free(header->field);
             header->field = NULL;
+            header->field_len = 0;
         }
         if (header->value != NULL) {
             free(header->value);
             header->value = NULL;
+            header->value_len = 0;
         }
     }
 
-    http_request->header_lines = 0;
+    request->header_lines = 0;
 
-    if (http_request->body != NULL) {
-        free(http_request->body);
-        http_request->body = NULL;
-        http_request->body_length = 0;
+    if (request->body != NULL) {
+        free(request->body);
+        request->body = NULL;
+        request->body_len = 0;
     }
 
-    free(http_request);
+    free(request);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -102,14 +104,14 @@ static int
 __on_headers_complete(http_parser *parser)
 {
     size_t len;
-    bee_http_request_t *http_request = parser->data;
+    bh_request_t *request = parser->data;
     const char *method = http_method_str((enum http_method)parser->method);
 
     len = strlen(method);
-    http_request->method = malloc(len + 1);
-    assert(http_request->method != NULL);
-    strncpy(http_request->method, method, len);
-    http_request->method[len] = '\0';
+    request->method = malloc(len + 1);
+    assert(request->method != NULL);
+    strncpy(request->method, method, len);
+    request->method[len] = '\0';
 
     return 0;
 }
@@ -117,24 +119,24 @@ __on_headers_complete(http_parser *parser)
 static int
 __on_url(http_parser *parser, const char *at, size_t len)
 {
-    bee_http_request_t *http_request = parser->data;
+    bh_request_t *request = parser->data;
 
-    http_request->url = malloc(len + 1);
-    assert(http_request->url != NULL);
-    strncpy(http_request->url, at, len);
-    http_request->url[len] = '\0';
+    request->url = malloc(len + 1);
+    assert(request->url != NULL);
+    strncpy(request->url, at, len);
+    request->url[len] = '\0';
     return 0;
 }
 
 static int
 __on_header_field(http_parser *parser, const char *at, size_t len)
 {
-    bee_http_request_t *http_request = parser->data;
-    bee_http_header_t *header = &http_request->headers[http_request->header_lines];
+    bh_request_t *request = parser->data;
+    bh_header_t *header = &request->headers[request->header_lines];
 
     header->field = malloc(len + 1);
     assert(header->field != NULL);
-    header->field_length = len;
+    header->field_len = len;
     strncpy(header->field, at, len);
     header->field[len] = '\0';
     return 0;
@@ -143,15 +145,15 @@ __on_header_field(http_parser *parser, const char *at, size_t len)
 static int
 __on_header_value(http_parser *parser, const char *at, size_t len)
 {
-    bee_http_request_t *http_request = parser->data;
-    bee_http_header_t *header = &http_request->headers[http_request->header_lines];
+    bh_request_t *request = parser->data;
+    bh_header_t *header = &request->headers[request->header_lines];
 
     header->value = malloc(len + 1);
     assert(header->value != NULL);
-    header->value_length = len;
+    header->value_len = len;
     strncpy(header->value, at, len);
     header->value[len] = '\0';
-    ++http_request->header_lines;
+    ++request->header_lines;
 
     return 0;
 }
@@ -159,13 +161,13 @@ __on_header_value(http_parser *parser, const char *at, size_t len)
 static int
 __on_body(http_parser *parser, const char *at, size_t len)
 {
-    bee_http_request_t *http_request = parser->data;
+    bh_request_t *request = parser->data;
 
-    http_request->body = malloc(len + 1);
-    assert(http_request->body != NULL);
-    http_request->body_length = len;
-    strncpy(http_request->body, at, len);
-    http_request->body[len] = '\0';
+    request->body = malloc(len + 1);
+    assert(request->body != NULL);
+    request->body_len = len;
+    strncpy(request->body, at, len);
+    request->body[len] = '\0';
 
     return 0;
 }
@@ -173,20 +175,19 @@ __on_body(http_parser *parser, const char *at, size_t len)
 static int
 __on_message_complete(http_parser *parser)
 {
-    bee_http_request_t *http_request = parser->data;
+    bh_request_t *request = parser->data;
+    bh_header_t *header = NULL;
     int i;
 
-    bee_http_header_t *header = NULL;
-
-    printf("url: %s\n", http_request->url);
-    printf("method: %s\n", http_request->method);
+    printf("url: %s\n", request->url);
+    printf("method: %s\n", request->method);
     for (i = 0; i < MAX_HTTP_HEADERS; ++i) {
-        header = &http_request->headers[i];
+        header = &request->headers[i];
         if (header->field) {
             printf("header: %s: %s\n", header->field, header->value);
         }
     }
-    printf("body: %s\n", http_request->body);
+    printf("body: %s\n", request->body);
     printf("\n\n");
 
     return 0;
@@ -199,11 +200,11 @@ __on_message_complete(http_parser *parser)
 /*---------------------------------------------------------------------------*/
 /* Bee server callbacks                                                      */
 /*---------------------------------------------------------------------------*/
-enum BEE_HOOK_RESULT httpd_recv(int sfd, void *arg)
+enum BEE_HOOK_RESULT http_recv(int sfd, void *arg)
 {
     bee_connection_t *conn = arg;
-    bee_http_t *http = conn->server->pdata;
-    bee_http_request_t *http_request;
+    bh_server_t *httpd = conn->server->pdata;
+    bh_request_t *request;
     http_parser parser;
     char buf[65535];
     ssize_t nparsed = 0, nr = 0;
@@ -221,23 +222,23 @@ enum BEE_HOOK_RESULT httpd_recv(int sfd, void *arg)
         return BEE_HOOK_PEER_CLOSED;
     }
 
-    http_request = __http_request_new();
-    if (http_request == NULL)
+    request = __http_request_new();
+    if (request == NULL)
         return BEE_HOOK_ERR;
 
     http_parser_init(&parser, HTTP_REQUEST);
-    parser.data = http_request;
-    nparsed = http_parser_execute(&parser, &http->parser_settings, buf, nr);
+    parser.data = request;
+    nparsed = http_parser_execute(&parser, &httpd->parser_settings, buf, nr);
     if (nparsed < nr)
         fprintf(stderr, "parse error.\n");
     else {
         /* handle the http request */
-        bee_http_callback_t *callback;
+        bh_callback_t *callback;
         int found = 0;
 
-        TAILQ_FOREACH(callback, &http->callbacks, next) {
-            if (strcmp(callback->path, http_request->url) == 0) {
-                callback->cb(sfd, http_request);
+        TAILQ_FOREACH(callback, &httpd->callbacks, next) {
+            if (strcmp(callback->path, request->url) == 0) {
+                callback->cb(sfd, request);
                 found = 1;
                 break;
             }
@@ -252,7 +253,7 @@ enum BEE_HOOK_RESULT httpd_recv(int sfd, void *arg)
         }
     }
 
-    __http_request_free(http_request);
+    __http_request_free(request);
     return BEE_HOOK_CLOSED;
 }
 /*---------------------------------------------------------------------------*/
@@ -262,60 +263,60 @@ enum BEE_HOOK_RESULT httpd_recv(int sfd, void *arg)
 /* Exported functions                                                        */
 /*---------------------------------------------------------------------------*/
 bee_server_t *
-bee_httpd_new(struct event_base *evbase, const char *baddr, uint16_t port, int backlog)
+bh_server_new(struct event_base *evbase, const char *baddr, uint16_t port, int backlog)
 {
-    bee_http_t * http;
+    bh_server_t * httpd;
     bee_server_t * server;
 
-    http = calloc(1, sizeof(*http));
-    if (!http)
+    httpd = calloc(1, sizeof(*httpd));
+    if (!httpd)
         return NULL;
 
-    http->parser_settings.on_message_begin = __on_message_begin;
-    http->parser_settings.on_url = __on_url;
-    http->parser_settings.on_header_field = __on_header_field;
-    http->parser_settings.on_header_value = __on_header_value;
-    http->parser_settings.on_headers_complete = __on_headers_complete;
-    http->parser_settings.on_body = __on_body;
-    http->parser_settings.on_message_complete = __on_message_complete;
-    TAILQ_INIT(&http->callbacks);
+    httpd->parser_settings.on_message_begin = __on_message_begin;
+    httpd->parser_settings.on_url = __on_url;
+    httpd->parser_settings.on_header_field = __on_header_field;
+    httpd->parser_settings.on_header_value = __on_header_value;
+    httpd->parser_settings.on_headers_complete = __on_headers_complete;
+    httpd->parser_settings.on_body = __on_body;
+    httpd->parser_settings.on_message_complete = __on_message_complete;
+    TAILQ_INIT(&httpd->callbacks);
 
     server = bee_server_tcp_new(evbase, baddr, port, backlog);
     if (!server) {
-        free(http);
+        free(httpd);
         return NULL;
     }
 
-    server->pdata = http;
-    server->on_recv = httpd_recv;
+    server->pdata = httpd;
+    server->on_recv = http_recv;
 
     return server;
 }
 
 void
-bee_httpd_free(bee_server_t *server)
+bh_server_free(bee_server_t *server)
 {
-    bee_http_t * http = server->pdata;
-    bee_http_callback_t *callback, *tmp;
+    bh_server_t *httpd = server->pdata;
+    bh_callback_t *callback, *tmp;
 
-    TAILQ_FOREACH_SAFE(callback, &http->callbacks, next, tmp) {
+    TAILQ_FOREACH_SAFE(callback, &httpd->callbacks, next, tmp) {
         if (callback->path != NULL)
             free(callback->path);
 
-        TAILQ_REMOVE(&http->callbacks, callback, next);
+        TAILQ_REMOVE(&httpd->callbacks, callback, next);
         free(callback);
     }
 
-    free(http);
+    free(httpd);
     bee_server_free(server);
 }
 
 
-bee_http_callback_t *
-bee_httpd_set_cb(bee_server_t *server, const char *path, bee_http_callback_cb cb)
+bh_callback_t *
+bh_server_set_cb(bee_server_t *server, const char *path, bh_callback_cb cb)
 {
-    bee_http_t * http = server->pdata;
-    bee_http_callback_t *callback;
+    bh_server_t *httpd = server->pdata;
+    bh_callback_t *callback;
 
     callback = calloc(1, sizeof(*callback));
     if (!callback)
@@ -323,7 +324,7 @@ bee_httpd_set_cb(bee_server_t *server, const char *path, bee_http_callback_cb cb
 
     callback->path = strdup(path);
     callback->cb = cb;
-    TAILQ_INSERT_TAIL(&http->callbacks, callback, next);
+    TAILQ_INSERT_TAIL(&httpd->callbacks, callback, next);
 
     return callback;
 }

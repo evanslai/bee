@@ -5,7 +5,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include "bee.h"
-#include "bee_telnet.h"
+#include "bee_cli.h"
 
 #define ISO_nl       0x0a
 #define ISO_cr       0x0d
@@ -34,25 +34,24 @@
 #endif
 
 
-#define TELNET_LINELEN 80
+#define BUF_SIZE 80
+
+static char telnet_prompt[128] = "bee> ";
 
 typedef struct {
-    int     sfd;
-    char    buf[TELNET_LINELEN];
+    char    buf[BUF_SIZE];
     int     bufptr;
     int     state;
 } telnet_state_t;
 
 
 static telnet_state_t *
-telnet_state_new(int sfd)
+telnet_state_new(void)
 {
     telnet_state_t *s;
 
     s = calloc(1, sizeof(*s));
     assert(s != NULL);
-
-    s->sfd = sfd;
     s->bufptr = 0;
     s->state = STATE_NORMAL;
 
@@ -109,7 +108,7 @@ parsedargs(char *args, int *argc)
     return argv;
 }
 
-void
+static void
 freeparsedargs(char **argv)
 {
     if (argv) {
@@ -138,21 +137,20 @@ get_char(telnet_state_t *s, uint8_t c)
         ++s->bufptr;
 }
 
-
 static void
-sendopt(telnet_state_t *s, uint8_t option, uint8_t value)
+sendopt(int sfd, uint8_t option, uint8_t value)
 {
     ssize_t nr;
     char *linebuf;
  
-    linebuf = calloc(sizeof(char), TELNET_LINELEN);
+    linebuf = calloc(sizeof(char), BUF_SIZE);
     assert(linebuf != NULL);
  
     linebuf[0] = TELNET_IAC;
     linebuf[1] = option;
     linebuf[2] = value;
     linebuf[3] = 0;
-    nr = send(s->sfd, linebuf, TELNET_LINELEN, 0);
+    nr = send(sfd, linebuf, BUF_SIZE, 0);
     if (nr < 0)
         perror("send");
 
@@ -164,10 +162,10 @@ sendopt(telnet_state_t *s, uint8_t option, uint8_t value)
 /*---------------------------------------------------------------------------*/
 /* Bee server callbacks                                                      */
 /*---------------------------------------------------------------------------*/
-enum BEE_HOOK_RESULT telnetd_recv(int sfd, void *arg)
+enum BEE_HOOK_RESULT telnet_recv(int sfd, void *arg)
 {
-    bee_connection_t * conn = arg;
-    bee_telnet_t *telnet = conn->server->pdata;
+    bee_connection_t *conn = arg;
+    bcli_server_t *cli = conn->server->pdata;
     telnet_state_t *s = conn->pdata;
     unsigned char c;
     ssize_t nr;
@@ -214,22 +212,22 @@ enum BEE_HOOK_RESULT telnetd_recv(int sfd, void *arg)
             break;
         case STATE_WILL:
             /* Reply with a DONT */
-            sendopt(s, TELNET_DONT, c);
+            sendopt(sfd, TELNET_DONT, c);
             s->state = STATE_NORMAL;
             break;
         case STATE_WONT:
             /* Reply with a DONT */
-            sendopt(s, TELNET_DONT, c);
+            sendopt(sfd, TELNET_DONT, c);
             s->state = STATE_NORMAL;
             break;
         case STATE_DO:
             /* Reply with a WONT */
-            sendopt(s, TELNET_WONT, c);
+            sendopt(sfd, TELNET_WONT, c);
             s->state = STATE_NORMAL;
             break;
         case STATE_DONT:
             /* Reply with a WONT */
-            sendopt(s, TELNET_WONT, c);
+            sendopt(sfd, TELNET_WONT, c);
             s->state = STATE_NORMAL;
             break;
         case STATE_NORMAL:
@@ -243,16 +241,16 @@ enum BEE_HOOK_RESULT telnetd_recv(int sfd, void *arg)
     }
 
     if (s->bufptr == 0) {
-        bee_telnet_callback_t *callback;
+        bcli_callback_t *callback;
         int found = 0;
 
         if (strcmp(s->buf, "quit") == 0) {
-            bee_telnetd_println(sfd, "goodbye");
+            bcli_println(sfd, "goodbye");
             telnet_state_free(s);
             return BEE_HOOK_PEER_CLOSED;
         }
 
-        TAILQ_FOREACH(callback, &telnet->callbacks, next) {
+        TAILQ_FOREACH(callback, &cli->callbacks, next) {
             if (strncmp(callback->path, s->buf, strlen(callback->path)) == 0) {
                 int argc;
                 char **argv;
@@ -266,19 +264,19 @@ enum BEE_HOOK_RESULT telnetd_recv(int sfd, void *arg)
         }
 
         if (!found)
-            bee_telnetd_println(sfd, "command not found");
-        bee_telnetd_prompt(sfd, "bee> ");
+            bcli_println(sfd, "command not found");
+        bcli_prompt(sfd);
     }
 
     return BEE_HOOK_OK;
 }
 
-enum BEE_HOOK_RESULT telnetd_accept(int sfd, void *arg)
+enum BEE_HOOK_RESULT telnet_accept(int sfd, void *arg)
 {
     bee_connection_t *conn = arg;
-    telnet_state_t *s = telnet_state_new(sfd);
+    telnet_state_t *s = telnet_state_new();
     conn->pdata = s;
-    bee_telnetd_prompt(sfd, "bee> ");
+    bcli_prompt(sfd);
     return BEE_HOOK_OK;
 }
 
@@ -287,53 +285,53 @@ enum BEE_HOOK_RESULT telnetd_accept(int sfd, void *arg)
 /* Exported functions                                                        */
 /*---------------------------------------------------------------------------*/
 bee_server_t *
-bee_telnetd_new(struct event_base *evbase, const char *baddr, uint16_t port, int backlog)
+bcli_server_new(struct event_base *evbase, const char *baddr, uint16_t port, int backlog)
 {
-    bee_telnet_t * telnet;
-    bee_server_t * server;
+    bcli_server_t *cli;
+    bee_server_t *server;
 
-    telnet = calloc(1, sizeof(*telnet));
-    if (!telnet)
+    cli = calloc(1, sizeof(*cli));
+    if (!cli)
         return NULL;
 
-    TAILQ_INIT(&telnet->callbacks);
+    TAILQ_INIT(&cli->callbacks);
 
     server = bee_server_tcp_new(evbase, baddr, port, backlog);
     if (!server) {
-        free(telnet);
+        free(cli);
         return NULL;
     }
 
-    server->pdata = telnet;
-    server->on_accept = telnetd_accept;
-    server->on_recv = telnetd_recv;
+    server->pdata = cli;
+    server->on_accept = telnet_accept;
+    server->on_recv = telnet_recv;
 
     return server;
 }
 
 void
-bee_telnetd_free(bee_server_t *server)
+bcli_server_free(bee_server_t *server)
 {
-    bee_telnet_t *telnet = server->pdata;
-    bee_telnet_callback_t *callback, *tmp;
+    bcli_server_t *cli = server->pdata;
+    bcli_callback_t *callback, *tmp;
 
-    TAILQ_FOREACH_SAFE(callback, &telnet->callbacks, next, tmp) {
+    TAILQ_FOREACH_SAFE(callback, &cli->callbacks, next, tmp) {
         if (callback->path != NULL)
             free(callback->path);
 
-        TAILQ_REMOVE(&telnet->callbacks, callback, next);
+        TAILQ_REMOVE(&cli->callbacks, callback, next);
         free(callback);
     }
 
-    free(telnet);
+    free(cli);
     bee_server_free(server);
 }
 
-bee_telnet_callback_t *
-bee_telnetd_set_cb(bee_server_t *server, const char *path, bee_telnet_callback_cb cb)
+bcli_callback_t *
+bcli_server_set_cb(bee_server_t *server, const char *path, bcli_callback_cb cb)
 {
-    bee_telnet_t * telnet = server->pdata;
-    bee_telnet_callback_t *callback;
+    bcli_server_t *cli = server->pdata;
+    bcli_callback_t *callback;
 
     callback = calloc(1, sizeof(*callback));
     if (!callback)
@@ -341,51 +339,65 @@ bee_telnetd_set_cb(bee_server_t *server, const char *path, bee_telnet_callback_c
 
     callback->path = strdup(path);
     callback->cb = cb;
-    TAILQ_INSERT_TAIL(&telnet->callbacks, callback, next);
+    TAILQ_INSERT_TAIL(&cli->callbacks, callback, next);
 
     return callback;
 }
 
+
 void
-bee_telnetd_prompt(int sfd, char *str)
+bcli_set_prompt(const char *prompt)
 {
-    ssize_t nr;
-    char *linebuf;
- 
-    linebuf = calloc(sizeof(char), TELNET_LINELEN);
-    assert(linebuf != NULL);
-    strncpy(linebuf, str, TELNET_LINELEN);
-    nr = send(sfd, linebuf, TELNET_LINELEN, 0);
-    if (nr < 0)
-        perror("write");
- 
-    free(linebuf);
+    strncpy(telnet_prompt, prompt, sizeof(telnet_prompt));
+}
+
+char *
+bcli_get_prompt(void)
+{
+    return telnet_prompt;
 }
 
 void
-bee_telnetd_println(int sfd, const char *fmt, ...)
+bcli_println(int sfd, const char *fmt, ...)
 {
     ssize_t nr;
     char *linebuf;
     int len;
     va_list arg;
  
-    linebuf = calloc(sizeof(char), TELNET_LINELEN);
+    linebuf = calloc(sizeof(char), BUF_SIZE);
     assert(linebuf != NULL);
 
     va_start(arg, fmt);
-    vsnprintf(linebuf, TELNET_LINELEN, fmt, arg);
+    vsnprintf(linebuf, BUF_SIZE, fmt, arg);
     va_end(arg);
 
     len = strlen(linebuf);
-    if (len < TELNET_LINELEN - 2) {
+    if (len < BUF_SIZE - 2) {
         linebuf[len] = ISO_cr;
         linebuf[len+1] = ISO_nl;
         linebuf[len+2] = 0;
     }
-    nr = send(sfd, linebuf, TELNET_LINELEN, 0);
+    nr = send(sfd, linebuf, BUF_SIZE, 0);
     if (nr < 0)
         perror("send");
  
     free(linebuf);
 }
+
+void
+bcli_prompt(int sfd)
+{
+    ssize_t nr;
+    char *linebuf;
+ 
+    linebuf = calloc(sizeof(char), BUF_SIZE);
+    assert(linebuf != NULL);
+    strncpy(linebuf, telnet_prompt, BUF_SIZE);
+    nr = send(sfd, linebuf, BUF_SIZE, 0);
+    if (nr < 0)
+        perror("write");
+ 
+    free(linebuf);
+}
+
