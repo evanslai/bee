@@ -37,7 +37,10 @@ __tcp_conn_read_cb(evutil_socket_t sfd, short events, void *arg)
     if (server->on_recv != NULL)
         status = server->on_recv(sfd, conn);
 
-    if (status == BEE_HOOK_PEER_CLOSED || status == BEE_HOOK_ERR) {
+    if (status == BEE_HOOK_CLOSED ||
+        status == BEE_HOOK_PEER_CLOSED ||
+        status == BEE_HOOK_ERR)
+    {
         conn->server = NULL;
         event_free(conn->accept_ev);
         free(conn);

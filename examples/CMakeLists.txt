@@ -9,7 +9,10 @@ add_executable(mcast_receive mcast_receive.c)
 target_link_libraries(mcast_receive bee -levent)
 
 add_executable(httpd httpd.c)
-target_link_libraries(httpd beehelper bee -levent)
+target_link_libraries(httpd bee beehelper -levent)
 
 add_executable(telnetd telnetd.c)
 target_link_libraries(telnetd bee -levent)
+
+add_executable(bee_httpd bee_httpd.c)
+target_link_libraries(bee_httpd bee beehelper -levent)
