@@ -7,13 +7,18 @@ void test_cb(int sfd, bh_request_t *request)
     bh_send_reply(sfd, "text/plain", "Hello, World!\n", 14);
 }
 
+void test2_cb(int sfd, bh_request_t *request)
+{
+    bh_send_reply(sfd, "application/json; charset=utf-8", "{\"Hello\":\"World!\"}", 18);
+}
+
 int main(int argc, char **argv)
 {
     struct event_base *evbase = event_base_new();
     bee_server_t *server = bh_server_new(evbase, "0.0.0.0", 8000, -1);
 
     bh_server_set_cb(server, "/", test_cb);
-    bh_server_set_cb(server, "/hello", test_cb);
+    bh_server_set_cb(server, "/hello", test2_cb);
     printf("Start http server with port 8000\n");
     event_base_loop(evbase, 0);
     bh_server_free(server);
