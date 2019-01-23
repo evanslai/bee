@@ -71,30 +71,12 @@ int main(int argc, char **argv)
 ## HTTP Server Example
 ```
 #include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <errno.h>
 #include "bee.h"
 #include "bee_http.h"
 
-
-#define RESPONSE                    \
-    "HTTP/1.1 200 OK\r\n"           \
-    "Content-Type: text/plain\r\n"  \
-    "Content-Length: 14\r\n"        \
-    "\r\n"                          \
-    "Hello, World!\n"
-
-
 void test_cb(int sfd, bh_request_t *request)
 {
-    ssize_t nr = 0;
-    nr = send(sfd, RESPONSE, sizeof(RESPONSE), 0);
-    if (nr < 0) {
-        perror("send");
-    }
+    bh_send_reply(sfd, "text/plain", "Hello, World!\n", 14);
 }
 
 int main(int argc, char **argv)
