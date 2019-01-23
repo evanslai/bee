@@ -45,7 +45,7 @@ struct bh_callback {
 };
 
 struct bh_server {
-    http_parser_settings                parser_settings;
+    http_parser_settings          parser_settings;
     TAILQ_HEAD(, bh_callback)     callbacks;
 };
 
@@ -54,5 +54,6 @@ bee_server_t * bh_server_new(struct event_base *evbase, const char *baddr, uint1
 void bh_server_free(bee_server_t *server);
 bh_callback_t * bh_server_set_cb(bee_server_t *server, const char *path, bh_callback_cb cb);
 
+void bh_send_reply(int sfd, const char *content_type, const char *body, int body_len);
 #endif
 

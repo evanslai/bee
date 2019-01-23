@@ -329,3 +329,23 @@ bh_server_set_cb(bee_server_t *server, const char *path, bh_callback_cb cb)
     return callback;
 }
 
+
+void bh_send_reply(int sfd, const char *content_type, const char *body, int body_len)
+{
+    int len = 0;
+    int total = body_len + 128;
+    char *buf = calloc(sizeof(char), total);
+    ssize_t nr = 0;
+
+    len += snprintf(buf+len, total-len, "HTTP/1.1 200 OK\r\n");
+    len += snprintf(buf+len, total-len, "Content-Type: %s\r\n", content_type);
+    len += snprintf(buf+len, total-len, "Content-Length: %d\r\n", body_len);
+    len += snprintf(buf+len, total-len, "\r\n");
+    len += snprintf(buf+len, total-len, "%s", body);
+
+    nr = send(sfd, buf, len, 0);
+    if (nr < 0)
+        perror("send");
+
+    free(buf);
+}
