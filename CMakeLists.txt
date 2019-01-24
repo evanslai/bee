@@ -4,8 +4,6 @@ project(bee)
 
 include_directories(includes)
 include_directories(external_libs/http-parser)
-include_directories(external_libs/inih)
-include_directories(external_libs/parson)
 
 add_subdirectory(external_libs)
 
