@@ -250,6 +250,15 @@ enum BEE_HOOK_RESULT telnet_recv(int sfd, void *arg)
             return BEE_HOOK_PEER_CLOSED;
         }
 
+        /* handle \x0d\x0a (\r\n) case */
+        if (strlen(s->buf) == 0)
+            return BEE_HOOK_OK;
+        if ((strncmp(s->buf, "\x0a", 1) == 0)) {
+            memset(s->buf, 0, sizeof(s->buf));
+            bcli_prompt(sfd);
+            return BEE_HOOK_OK;
+        }
+
         TAILQ_FOREACH(callback, &cli->callbacks, next) {
             if (strncmp(callback->path, s->buf, strlen(callback->path)) == 0) {
                 int argc;
@@ -263,6 +272,7 @@ enum BEE_HOOK_RESULT telnet_recv(int sfd, void *arg)
             }
         }
 
+        memset(s->buf, 0, sizeof(s->buf));
         if (!found)
             bcli_println(sfd, "command not found");
         bcli_prompt(sfd);
